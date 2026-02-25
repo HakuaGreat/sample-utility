@@ -14,9 +14,6 @@ import java.util.stream.Stream;
 
 /**
  * DTOクラスのフィールドからCSVを自動生成
- * - ヘッダあり
- * - ヘッダ順＝データ順（同じField配列を使う）
- * - UTF-8 / BOMなし / Excel非想定
  * - @CsvName でヘッダ名変更、@CsvIgnore で除外
  */
 public final class ReflectiveCsvWriter<T> {
