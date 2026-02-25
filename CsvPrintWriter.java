@@ -1,9 +1,8 @@
 package your.pkg.csv;
 
-import java.io.OutputStream;
-import java.io.OutputStreamWriter;
-import java.io.PrintWriter;
+import java.io.BufferedWriter;
 import java.io.IOException;
+import java.io.PrintWriter;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -11,64 +10,52 @@ import java.util.List;
 import java.util.stream.Stream;
 
 public final class CsvPrintWriter {
-
     private CsvPrintWriter() {}
 
-    public static <T> void writeUtf8(Path out,
-                                     List<CsvCol<T>> cols,
-                                     Stream<T> rows,
-                                     boolean withBomForExcel) throws IOException {
+    /**
+     * UTF-8でCSV出力（BOMなし、Excel非想定）
+     * - ヘッダあり
+     * - 列順は cols の順（ヘッダ順＝列順）
+     * - CSVエスケープ対応
+     * - rowsはStreamで逐次書き込み（大きくてもOK）
+     */
+    public static <T> void writeUtf8(Path out, List<CsvCol<T>> cols, Stream<T> rows) throws IOException {
+        try (BufferedWriter bw = Files.newBufferedWriter(out, StandardCharsets.UTF_8);
+             PrintWriter pw = new PrintWriter(bw)) {
 
-        try (OutputStream os = Files.newOutputStream(out)) {
+            // header
+            writeHeader(pw, cols);
 
-            if (withBomForExcel) {
-                os.write(new byte[]{(byte)0xEF, (byte)0xBB, (byte)0xBF});
-            }
+            // data
+            rows.forEach(row -> writeDataRow(pw, cols, row));
 
-            try (PrintWriter pw = new PrintWriter(
-                    new OutputStreamWriter(os, StandardCharsets.UTF_8))) {
-
-                // header
-                writeRow(pw, extractHeaders(cols));
-
-                // data
-                rows.forEach(row -> writeRow(pw, extractValues(cols, row)));
-
-                pw.flush();
-
-                if (pw.checkError()) {
-                    throw new IllegalStateException("CSV write failed (PrintWriter error).");
-                }
+            pw.flush();
+            if (pw.checkError()) {
+                throw new IllegalStateException("CSV write failed (PrintWriter error).");
             }
         }
     }
 
-    private static <T> List<String> extractHeaders(List<CsvCol<T>> cols) {
-        java.util.ArrayList<String> list = new java.util.ArrayList<>();
-        for (CsvCol<T> col : cols) {
-            list.add(col.getHeader());
-        }
-        return list;
-    }
-
-    private static <T> List<String> extractValues(List<CsvCol<T>> cols, T row) {
-        java.util.ArrayList<String> list = new java.util.ArrayList<>();
-        for (CsvCol<T> col : cols) {
-            list.add(col.valueAsString(row));
-        }
-        return list;
-    }
-
-    private static void writeRow(PrintWriter pw, List<String> values) {
-        for (int i = 0; i < values.size(); i++) {
+    private static <T> void writeHeader(PrintWriter pw, List<CsvCol<T>> cols) {
+        for (int i = 0; i < cols.size(); i++) {
             if (i > 0) pw.print(',');
-            pw.print(escape(values.get(i)));
+            pw.print(escape(cols.get(i).getHeader()));
         }
-        pw.print("\r\n"); // Windows/Excel互換
+        pw.print('\n');
+    }
+
+    private static <T> void writeDataRow(PrintWriter pw, List<CsvCol<T>> cols, T row) {
+        for (int i = 0; i < cols.size(); i++) {
+            if (i > 0) pw.print(',');
+            pw.print(escape(cols.get(i).valueAsString(row)));
+        }
+        pw.print('\n');
     }
 
     /**
-     * RFC4180基本準拠のエスケープ
+     * RFC4180の基本：
+     * 値に , " 改行(\n/\r) が含まれる場合はダブルクォートで囲み、
+     * 内部の " は "" にする。
      */
     private static String escape(String s) {
         if (s == null) return "";
@@ -81,21 +68,15 @@ public final class CsvPrintWriter {
                 break;
             }
         }
-
         if (!needQuote) return s;
 
         StringBuilder sb = new StringBuilder(s.length() + 2);
         sb.append('"');
-
         for (int i = 0; i < s.length(); i++) {
             char c = s.charAt(i);
-            if (c == '"') {
-                sb.append("\"\"");
-            } else {
-                sb.append(c);
-            }
+            if (c == '"') sb.append("\"\"");
+            else sb.append(c);
         }
-
         sb.append('"');
         return sb.toString();
     }
