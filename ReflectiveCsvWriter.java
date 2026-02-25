@@ -13,7 +13,7 @@ import java.util.List;
 import java.util.stream.Stream;
 
 /**
- * DTOクラスのフィールドからCSVを自動生成（標準のみ / Java11）
+ * DTOクラスのフィールドからCSVを自動生成
  * - ヘッダあり
  * - ヘッダ順＝データ順（同じField配列を使う）
  * - UTF-8 / BOMなし / Excel非想定
