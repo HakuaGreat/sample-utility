@@ -40,16 +40,21 @@ public final class ReflectiveCsvWriter<T> {
             headers.add(name != null ? name.value() : f.getName());
         }
     }
+
+    import org.apache.ibatis.cursor.Cursor;
+
+// （既存のwriteUtf8(Stream...)はそのまま）
+
 public void writeUtf8(Path out, Cursor<T> cursor) throws IOException {
     try (BufferedWriter bw = Files.newBufferedWriter(out, StandardCharsets.UTF_8);
-         PrintWriter pw = new PrintWriter(bw)) {
+         PrintWriter pw = new PrintWriter(bw);
+         Cursor<T> c = cursor) { // ← ★MyBatis CursorはAutoCloseableなのでtryで閉じられる
 
         // header
         writeRow(pw, headers);
 
-        // data
-        while (cursor.hasNext()) {
-            T row = cursor.next();
+        // data（逐次）
+        for (T row : c) {
             writeDtoRow(pw, row);
         }
 
@@ -57,15 +62,6 @@ public void writeUtf8(Path out, Cursor<T> cursor) throws IOException {
         if (pw.checkError()) {
             throw new IllegalStateException("CSV write failed (PrintWriter error).");
         }
-    } finally {
-        // CursorがCloseableなら確実に閉じる
-        closeQuietly(cursor);
-    }
-}
-
-private static void closeQuietly(Object o) {
-    if (o instanceof AutoCloseable) {
-        try { ((AutoCloseable) o).close(); } catch (Exception ignored) {}
     }
 }
 
