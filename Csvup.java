@@ -62,3 +62,57 @@ public class BulkV2Uploader {
 
             if (!isRetryable(code) || attempt == maxAttempts) {
                 // ここでHTMLが返ってきても、そのまま呼び出し側がログできる
+                throw new IOException("CSV upload failed. status=" + code + " body=" + truncate(resp.body(), 2000));
+            }
+
+            // Retry-After があれば最優先（秒 or HTTP-date だが、SF/ゲートウェイ系は秒が多い）
+            Long retryAfterSeconds = parseRetryAfterSeconds(resp);
+            sleepBackoff(retryAfterSeconds, attempt);
+        }
+
+        // ここには来ないがコンパイラ用
+        throw new IOException("CSV upload failed: exhausted retries");
+    }
+
+    private static boolean isRetryable(int code) {
+        return code == 429 || code == 500 || code == 502 || code == 503 || code == 504;
+    }
+
+    private static Long parseRetryAfterSeconds(HttpResponse<?> resp) {
+        Optional<String> ra = resp.headers().firstValue("Retry-After");
+        if (ra.isEmpty()) return null;
+        String v = ra.get().trim();
+        // 基本「秒」だけ対応（HTTP-dateは必要になったら追加）
+        try {
+            return Long.parseLong(v);
+        } catch (NumberFormatException ignore) {
+            return null;
+        }
+    }
+
+    /**
+     * Backoff strategy:
+     * - If retryAfterSeconds != null: sleep that + small jitter
+     * - else: exponential backoff (base 1s) capped at 30s + jitter
+     */
+    private static void sleepBackoff(Long retryAfterSeconds, int attempt) throws InterruptedException {
+        long jitterMs = ThreadLocalRandom.current().nextLong(0, 350); // 0..349ms
+
+        if (retryAfterSeconds != null) {
+            long ms = retryAfterSeconds * 1000L + jitterMs;
+            Thread.sleep(ms);
+            return;
+        }
+
+        // attempt=1 => 1s, 2 => 2s, 3 => 4s, 4 => 8s ...
+        long baseMs = 1000L * (1L << Math.min(attempt - 1, 5)); // 1,2,4,8,16,32
+        long cappedMs = Math.min(baseMs, 30_000L);
+        Thread.sleep(cappedMs + jitterMs);
+    }
+
+    private static String truncate(String s, int max) {
+        if (s == null) return "";
+        if (s.length() <= max) return s;
+        return s.substring(0, max) + "...(truncated)";
+    }
+}
