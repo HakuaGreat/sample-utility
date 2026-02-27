@@ -1,59 +1,86 @@
-public final class MappedCsvWriter<T> {
-    private final List<Col<T>> cols;
+import org.apache.ibatis.cursor.Cursor;
 
-    private MappedCsvWriter(List<Col<T>> cols) {
-        this.cols = cols;
-    }
+import java.io.*;
+import java.lang.reflect.*;
+import java.nio.charset.StandardCharsets;
+import java.util.*;
+import java.util.stream.Collectors;
 
-    public static <T> MappedCsvWriter<T> fromSfToDtoFieldMap(
-            Class<T> clazz,
-            LinkedHashMap<String, String> sfToDtoField // ★順序が大事なのでLinkedHashMap推奨
-    ) {
-        List<Col<T>> cols = new ArrayList<>();
-        for (var e : sfToDtoField.entrySet()) {
-            String sfName = e.getKey();
-            String dtoFieldName = e.getValue();
-            try {
-                Field f = clazz.getDeclaredField(dtoFieldName);
-                f.setAccessible(true);
-                cols.add(new Col<>(sfName, f));
-            } catch (NoSuchFieldException ex) {
-                throw new IllegalArgumentException("DTOにフィールドが無い: " + dtoFieldName + " (SF列 " + sfName + ")", ex);
+public final class SfBulkCsvExporter {
+
+    public static <T> void export(
+            Class<T> dtoClass,
+            Cursor<T> cursor,
+            OutputStream out,
+            InputStream mappingPropertiesStream,
+            boolean mappingIsDtoToSf // trueなら dto=sf を反転して使う
+    ) throws IOException {
+
+        Properties p = new Properties();
+        // propertiesはISO-8859-1前提なので、UTF-8で書いてるならReaderで読む
+        try (Reader r = new InputStreamReader(mappingPropertiesStream, StandardCharsets.UTF_8)) {
+            p.load(r);
+        }
+
+        // SF->DTO の Map に揃える
+        Map<String, String> sfToDto = new LinkedHashMap<>();
+        for (String k : p.stringPropertyNames()) {
+            String v = p.getProperty(k);
+
+            if (!mappingIsDtoToSf) {
+                // k=SF, v=DTO
+                sfToDto.put(k.trim(), v.trim());
+            } else {
+                // k=DTO, v=SF なので反転
+                sfToDto.put(v.trim(), k.trim());
             }
         }
-        return new MappedCsvWriter<>(cols);
-    }
 
-    public void writeHeader(PrintWriter w) {
-        w.println(cols.stream().map(c -> c.sfName).collect(Collectors.joining(",")));
-    }
+        // DTOのFieldを解決（1回だけ）
+        Map<String, Field> dtoFields = new HashMap<>();
+        for (Field f : dtoClass.getDeclaredFields()) {
+            if (Modifier.isStatic(f.getModifiers())) continue;
+            f.setAccessible(true);
+            dtoFields.put(f.getName(), f);
+        }
 
-    public void writeRow(PrintWriter w, T dto) {
-        String line = cols.stream()
-                .map(c -> get(dto, c.field))
-                .collect(Collectors.joining(","));
-        w.println(line);
-    }
+        // 出力
+        try (PrintWriter w = new PrintWriter(new OutputStreamWriter(out, StandardCharsets.UTF_8))) {
 
-    private String get(T dto, Field f) {
-        try {
-            Object v = f.get(dto);
-            return escape(v == null ? "" : String.valueOf(v));
-        } catch (IllegalAccessException e) {
-            throw new RuntimeException(e);
+            // ヘッダー（SF名）
+            w.println(String.join(",", sfToDto.keySet()));
+
+            // 行
+            for (T dto : cursor) {
+                List<String> cols = new ArrayList<>(sfToDto.size());
+
+                for (Map.Entry<String, String> e : sfToDto.entrySet()) {
+                    String dtoFieldName = e.getValue();
+                    Field f = dtoFields.get(dtoFieldName);
+                    if (f == null) {
+                        throw new IllegalArgumentException("DTOにフィールドが無い: " + dtoFieldName + " (SF列: " + e.getKey() + ")");
+                    }
+                    Object v;
+                    try {
+                        v = f.get(dto);
+                    } catch (IllegalAccessException ex) {
+                        throw new RuntimeException(ex);
+                    }
+                    cols.add(escapeCsv(v == null ? "" : String.valueOf(v)));
+                }
+
+                w.println(String.join(",", cols));
+            }
+
+            w.flush();
         }
     }
 
-    private String escape(String s) {
+    private static String escapeCsv(String s) {
+        // BulkのCSVで事故りやすいので最低限のエスケープ
         if (s.contains(",") || s.contains("\n") || s.contains("\r") || s.contains("\"")) {
             return "\"" + s.replace("\"", "\"\"") + "\"";
         }
         return s;
-    }
-
-    private static final class Col<T> {
-        final String sfName;
-        final Field field;
-        Col(String sfName, Field field) { this.sfName = sfName; this.field = field; }
     }
 }
