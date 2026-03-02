@@ -12,64 +12,81 @@ public final class SfBulkCsvExporter {
             Class<T> dtoClass,
             Cursor<T> cursor,
             OutputStream out,
-            InputStream mappingPropertiesStream,
-            boolean mappingIsDtoToSf // trueなら dto=sf を反転して使う
+            InputStream mappingStream,
+            boolean mappingIsDtoToSf // trueなら DTO=SF を反転
     ) throws IOException {
 
+        // ① mapping読み込み
         Properties p = new Properties();
-        // propertiesはISO-8859-1前提なので、UTF-8で書いてるならReaderで読む
-        try (Reader r = new InputStreamReader(mappingPropertiesStream, StandardCharsets.UTF_8)) {
+        try (Reader r = new InputStreamReader(mappingStream, StandardCharsets.UTF_8)) {
             p.load(r);
         }
 
-        // SF->DTO の Map に揃える
-        Map<String, String> sfToDto = new LinkedHashMap<>();
-        for (String k : p.stringPropertyNames()) {
-            String v = p.getProperty(k);
-
+        // ② SF→DTO に統一
+        LinkedHashMap<String, String> sfToDto = new LinkedHashMap<>();
+        for (String key : p.stringPropertyNames()) {
+            String value = p.getProperty(key);
             if (!mappingIsDtoToSf) {
-                // k=SF, v=DTO
-                sfToDto.put(k.trim(), v.trim());
+                sfToDto.put(key.trim(), value.trim());
             } else {
-                // k=DTO, v=SF なので反転
-                sfToDto.put(v.trim(), k.trim());
+                sfToDto.put(value.trim(), key.trim());
             }
         }
 
-        // DTOのFieldを解決（1回だけ）
+        // ③ DTOフィールド取得（継承対応）
         Map<String, Field> dtoFields = new HashMap<>();
-        for (Field f : dtoClass.getDeclaredFields()) {
-            if (Modifier.isStatic(f.getModifiers())) continue;
-            f.setAccessible(true);
-            dtoFields.put(f.getName(), f);
+        for (Class<?> c = dtoClass; c != null && c != Object.class; c = c.getSuperclass()) {
+            for (Field f : c.getDeclaredFields()) {
+                if (Modifier.isStatic(f.getModifiers())) continue;
+                f.setAccessible(true);
+                dtoFields.putIfAbsent(f.getName(), f);
+            }
         }
 
-        // 出力
-        try (PrintWriter w = new PrintWriter(new OutputStreamWriter(out, StandardCharsets.UTF_8))) {
+        // ④ DTOに存在する列だけ残す
+        List<Column<T>> columns = new ArrayList<>();
 
-            // ヘッダー（SF名）
-            w.println(String.join(",", sfToDto.keySet()));
+        for (Map.Entry<String, String> e : sfToDto.entrySet()) {
+            String sfName = e.getKey();
+            String dtoFieldName = e.getValue();
 
-            // 行
+            Field f = dtoFields.get(dtoFieldName);
+            if (f == null) {
+                System.err.println("[INFO] Skip column (DTO field not found): "
+                        + sfName + " -> " + dtoFieldName);
+                continue; // ← 列ごとスキップ
+            }
+
+            columns.add(new Column<>(sfName, f));
+        }
+
+        if (columns.isEmpty()) {
+            throw new IllegalStateException("出力可能な列が1つもありません");
+        }
+
+        // ⑤ CSV出力
+        try (PrintWriter w = new PrintWriter(
+                new OutputStreamWriter(out, StandardCharsets.UTF_8))) {
+
+            // ヘッダー
+            w.println(columns.stream()
+                    .map(c -> c.sfName)
+                    .collect(Collectors.joining(",")));
+
+            // データ行
             for (T dto : cursor) {
-                List<String> cols = new ArrayList<>(sfToDto.size());
+                List<String> row = new ArrayList<>(columns.size());
 
-                for (Map.Entry<String, String> e : sfToDto.entrySet()) {
-                    String dtoFieldName = e.getValue();
-                    Field f = dtoFields.get(dtoFieldName);
-                    if (f == null) {
-                        throw new IllegalArgumentException("DTOにフィールドが無い: " + dtoFieldName + " (SF列: " + e.getKey() + ")");
-                    }
-                    Object v;
+                for (Column<T> col : columns) {
                     try {
-                        v = f.get(dto);
+                        Object value = col.field.get(dto);
+                        row.add(escapeCsv(value == null ? "" : String.valueOf(value)));
                     } catch (IllegalAccessException ex) {
                         throw new RuntimeException(ex);
                     }
-                    cols.add(escapeCsv(v == null ? "" : String.valueOf(v)));
                 }
 
-                w.println(String.join(",", cols));
+                w.println(String.join(",", row));
             }
 
             w.flush();
@@ -77,10 +94,20 @@ public final class SfBulkCsvExporter {
     }
 
     private static String escapeCsv(String s) {
-        // BulkのCSVで事故りやすいので最低限のエスケープ
-        if (s.contains(",") || s.contains("\n") || s.contains("\r") || s.contains("\"")) {
+        if (s.contains(",") || s.contains("\n")
+                || s.contains("\r") || s.contains("\"")) {
             return "\"" + s.replace("\"", "\"\"") + "\"";
         }
         return s;
+    }
+
+    private static class Column<T> {
+        final String sfName;
+        final Field field;
+
+        Column(String sfName, Field field) {
+            this.sfName = sfName;
+            this.field = field;
+        }
     }
 }
