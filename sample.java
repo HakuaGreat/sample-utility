@@ -39,3 +39,17 @@ try (Cursor<MyDto> cursor = mapper.selectCursor();
         false
     );
 }
+
+
+
+
+
+
+InputStream mapIn =
+    Thread.currentThread()
+          .getContextClassLoader()
+          .getResourceAsStream("mapping.properties");
+
+if (mapIn == null) {
+    throw new IllegalStateException("mapping.properties がクラスパスに見つかりません");
+}
