@@ -22,3 +22,20 @@ private <T> T parseJson(String json, TypeReference<T> typeRef) {
         throw new RuntimeException("JSON parse error", e);
     }
 }
+
+
+
+
+
+try (Cursor<MyDto> cursor = mapper.selectCursor();
+     InputStream mapIn = getClass().getResourceAsStream("/Mapper.properties");
+     OutputStream out = new FileOutputStream("retailstore.csv")) {
+
+    SfBulkCsvExporter.export(
+        MyDto.class,
+        cursor,
+        out,
+        mapIn,
+        false
+    );
+}
