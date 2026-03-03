@@ -4,146 +4,213 @@ import java.nio.charset.StandardCharsets;
 import java.util.*;
 
 /**
- * CSVをRFC4180寄りにパースして、全列 or 指定列だけを抽出して再出力する。
+ * RFC4180寄りのCSVを「レコード単位」でストリーミング処理するためのツール群（Java11 / 標準のみ）。
  *
- * 使い方例:
- *  java CsvExtract in.csv out.csv
- *  java CsvExtract in.csv out.csv --cols Name,PostalCode__c
- *  java CsvExtract in.csv out.csv --cols Name,PostalCode__c --encoding UTF-8
+ * 対応:
+ * - カンマ区切り
+ * - "..." クォート
+ * - セル内 "" は " として復元
+ * - クォート内改行を許容
  *
- * 注意:
- * - 1行目はヘッダー扱い
- * - 区切りはカンマ固定
+ * 使いどころ:
+ * - 既存CSVの正規化（再エスケープ）
+ * - 全列 or 指定列の抽出
+ * - SF Bulk向けに「列ズレ」しないCSVを生成
  */
-public class CsvExtract {
+public final class CsvToolkit {
 
-    public static void main(String[] args) throws Exception {
-        if (args.length < 2) {
-            System.err.println("Usage: java CsvExtract <in.csv> <out.csv> [--cols A,B,C] [--encoding UTF-8]");
-            System.exit(2);
+    private CsvToolkit() {}
+
+    // -------------------------
+    // Public API
+    // -------------------------
+
+    /** 先頭行をヘッダーとして読み、以降レコードを順に consumer に渡す（ストリーミング）。 */
+    public static void forEachRecordWithHeader(
+            Reader reader,
+            CsvRecordConsumer consumer
+    ) throws IOException {
+        Objects.requireNonNull(reader, "reader");
+        Objects.requireNonNull(consumer, "consumer");
+
+        CsvParser p = new CsvParser(reader);
+        List<String> header = p.nextRecord();
+        if (header == null) return;
+
+        consumer.onHeader(Collections.unmodifiableList(header));
+
+        List<String> rec;
+        long rowNo = 1; // header = 1
+        while ((rec = p.nextRecord()) != null) {
+            rowNo++;
+            consumer.onRecord(rowNo, Collections.unmodifiableList(rec));
         }
-
-        String inPath = args[0];
-        String outPath = args[1];
-
-        String colsArg = null;
-        Charset encoding = StandardCharsets.UTF_8;
-
-        for (int i = 2; i < args.length; i++) {
-            String a = args[i];
-            if ("--cols".equals(a) && i + 1 < args.length) {
-                colsArg = args[++i];
-            } else if ("--encoding".equals(a) && i + 1 < args.length) {
-                encoding = Charset.forName(args[++i]);
-            } else {
-                System.err.println("Unknown arg: " + a);
-                System.exit(2);
-            }
-        }
-
-        List<String> requestedCols = null;
-        if (colsArg != null && !colsArg.trim().isEmpty()) {
-            requestedCols = splitCols(colsArg);
-        }
-
-        try (Reader r = new BufferedReader(new InputStreamReader(new FileInputStream(inPath), encoding));
-             Writer w = new BufferedWriter(new OutputStreamWriter(new FileOutputStream(outPath), encoding))) {
-
-            CsvParser parser = new CsvParser(r);
-            CsvWriter writer = new CsvWriter(w);
-
-            // ヘッダー
-            List<String> header = parser.nextRecord();
-            if (header == null) {
-                throw new IllegalStateException("CSVが空です");
-            }
-
-            // 抽出列インデックス決定
-            List<Integer> keepIdx;
-            List<String> outHeader;
-
-            if (requestedCols == null) {
-                keepIdx = new ArrayList<>();
-                for (int i = 0; i < header.size(); i++) keepIdx.add(i);
-                outHeader = header;
-            } else {
-                Map<String, Integer> headerIndex = new HashMap<>();
-                for (int i = 0; i < header.size(); i++) {
-                    headerIndex.put(header.get(i), i);
-                }
-
-                keepIdx = new ArrayList<>();
-                outHeader = new ArrayList<>();
-                for (String col : requestedCols) {
-                    Integer idx = headerIndex.get(col);
-                    if (idx == null) {
-                        // 列が見つからない場合はスキップ or エラー。今回は「エラー」にして事故防止。
-                        throw new IllegalArgumentException("指定列がヘッダーに存在しません: " + col);
-                    }
-                    keepIdx.add(idx);
-                    outHeader.add(col);
-                }
-            }
-
-            // 出力ヘッダー
-            writer.writeRecord(outHeader);
-
-            // データ
-            List<String> record;
-            long rowNo = 1; // ヘッダー=1行目
-            while ((record = parser.nextRecord()) != null) {
-                rowNo++;
-
-                List<String> outRec = new ArrayList<>(keepIdx.size());
-                for (int idx : keepIdx) {
-                    // 行によって列数が足りないCSVもあるので、安全に拾う
-                    outRec.add(idx < record.size() ? record.get(idx) : "");
-                }
-
-                writer.writeRecord(outRec);
-            }
-
-            writer.flush();
-        }
-    }
-
-    private static List<String> splitCols(String s) {
-        String[] parts = s.split(",");
-        List<String> out = new ArrayList<>();
-        for (String p : parts) {
-            String t = p.trim();
-            if (!t.isEmpty()) out.add(t);
-        }
-        return out;
     }
 
     /**
-     * RFC4180寄り CSVパーサ:
-     * - カンマ区切り
-     * - "..." のクォート対応
-     * - セル内の "" は " として復元
-     * - クォート内の改行もセルの一部として扱う
+     * 全列または指定列のみ抽出してCSVとして書き出す。
+     * - selectedColumns == null の場合は全列
+     * - selectedColumns がある場合は「ヘッダー名」で指定した列のみ出力（順番も指定順）
+     *
+     * @param strictMissingColumn true: 指定列が無ければ例外 / false: 無い列は空欄として出す
      */
-    static final class CsvParser {
+    public static void extractCsv(
+            Reader in,
+            Writer out,
+            List<String> selectedColumns,
+            boolean strictMissingColumn
+    ) throws IOException {
+        Objects.requireNonNull(in, "in");
+        Objects.requireNonNull(out, "out");
+
+        CsvParser parser = new CsvParser(in);
+        CsvWriter writer = new CsvWriter(out);
+
+        List<String> header = parser.nextRecord();
+        if (header == null) return;
+
+        ColumnSelection sel = ColumnSelection.build(header, selectedColumns, strictMissingColumn);
+
+        // output header
+        writer.writeRecord(sel.outputHeader);
+
+        // output records
+        List<String> rec;
+        while ((rec = parser.nextRecord()) != null) {
+            writer.writeRecord(sel.pick(rec));
+        }
+        writer.flush();
+    }
+
+    /** CSVを「正規化」して書き出す（全列そのまま、ただし正しいクォートで再出力）。 */
+    public static void normalizeCsv(Reader in, Writer out) throws IOException {
+        extractCsv(in, out, null, true);
+    }
+
+    /** ファイルやHTTPなどで便利な UTF-8 デフォルトの Reader を作る。 */
+    public static Reader newReader(InputStream in) {
+        return new BufferedReader(new InputStreamReader(in, StandardCharsets.UTF_8));
+    }
+
+    /** ファイルやHTTPなどで便利な Writer を作る（UTF-8）。 */
+    public static Writer newWriter(OutputStream out) {
+        return new BufferedWriter(new OutputStreamWriter(out, StandardCharsets.UTF_8));
+    }
+
+    /** 文字コード指定したい場合の Reader */
+    public static Reader newReader(InputStream in, Charset cs) {
+        return new BufferedReader(new InputStreamReader(in, cs));
+    }
+
+    /** 文字コード指定したい場合の Writer */
+    public static Writer newWriter(OutputStream out, Charset cs) {
+        return new BufferedWriter(new OutputStreamWriter(out, cs));
+    }
+
+    // -------------------------
+    // Callback interface
+    // -------------------------
+
+    public interface CsvRecordConsumer {
+        /** ヘッダー行（1行目） */
+        void onHeader(List<String> header);
+
+        /**
+         * データ行
+         * @param rowNo 1-based 行番号（ヘッダー=1、データ開始=2）
+         */
+        void onRecord(long rowNo, List<String> record);
+    }
+
+    // -------------------------
+    // Internals: Column selection
+    // -------------------------
+
+    private static final class ColumnSelection {
+        final List<Integer> keepIndexes;  // indices in input record
+        final List<String> outputHeader;  // output header names
+
+        private ColumnSelection(List<Integer> keepIndexes, List<String> outputHeader) {
+            this.keepIndexes = keepIndexes;
+            this.outputHeader = outputHeader;
+        }
+
+        static ColumnSelection build(List<String> header, List<String> selected, boolean strictMissing) {
+            if (selected == null) {
+                List<Integer> idx = new ArrayList<>();
+                for (int i = 0; i < header.size(); i++) idx.add(i);
+                return new ColumnSelection(idx, new ArrayList<>(header));
+            }
+
+            Map<String, Integer> map = new HashMap<>();
+            for (int i = 0; i < header.size(); i++) {
+                map.put(header.get(i), i);
+            }
+
+            List<Integer> idx = new ArrayList<>(selected.size());
+            List<String> outHeader = new ArrayList<>(selected.size());
+
+            for (String col : selected) {
+                String c = (col == null) ? "" : col.trim();
+                if (c.isEmpty()) continue;
+
+                Integer i = map.get(c);
+                if (i == null) {
+                    if (strictMissing) {
+                        throw new IllegalArgumentException("指定列がヘッダーに存在しません: " + c);
+                    } else {
+                        // 入力に無い列は -1 として扱い、空欄で出す
+                        idx.add(-1);
+                        outHeader.add(c);
+                        continue;
+                    }
+                }
+                idx.add(i);
+                outHeader.add(c);
+            }
+
+            return new ColumnSelection(idx, outHeader);
+        }
+
+        List<String> pick(List<String> record) {
+            List<String> out = new ArrayList<>(keepIndexes.size());
+            for (int idx : keepIndexes) {
+                if (idx < 0) {
+                    out.add("");
+                } else {
+                    out.add(idx < record.size() ? record.get(idx) : "");
+                }
+            }
+            return out;
+        }
+    }
+
+    // -------------------------
+    // Internals: CSV Parser (RFC4180-ish)
+    // -------------------------
+
+    public static final class CsvParser {
         private final Reader r;
         private int pushed = -2; // -2: none, -1: EOF, else: char
 
-        CsvParser(Reader r) {
-            this.r = r;
+        public CsvParser(Reader r) {
+            this.r = Objects.requireNonNull(r, "reader");
         }
 
-        List<String> nextRecord() throws IOException {
+        /**
+         * 次のレコードを返す。EOFなら null。
+         * クォート内改行に対応するため、「行」ではなく「レコード」単位で読む。
+         */
+        public List<String> nextRecord() throws IOException {
             List<String> row = new ArrayList<>();
             StringBuilder cell = new StringBuilder();
-
             boolean inQuotes = false;
             boolean anyRead = false;
 
             while (true) {
                 int ch = read();
                 if (ch == -1) {
-                    if (!anyRead) return null; // 完全にEOF
-                    // EOFでレコード確定
+                    if (!anyRead) return null;
                     row.add(cell.toString());
                     return row;
                 }
@@ -154,11 +221,9 @@ public class CsvExtract {
                     if (ch == '"') {
                         int next = read();
                         if (next == '"') {
-                            // "" -> "
-                            cell.append('"');
+                            cell.append('"'); // "" -> "
                         } else {
-                            // クォート終わり
-                            inQuotes = false;
+                            inQuotes = false; // quote end
                             unread(next);
                         }
                     } else {
@@ -167,10 +232,8 @@ public class CsvExtract {
                     continue;
                 }
 
-                // quotes外
+                // outside quotes
                 if (ch == '"') {
-                    // セル開始直後の " をクォート開始として扱う
-                    // （厳密には前に文字がある場合の扱いはCSV方言差あり。ここでは開始とみなす）
                     inQuotes = true;
                     continue;
                 }
@@ -207,25 +270,22 @@ public class CsvExtract {
         }
 
         private void unread(int c) {
-            if (c == -2) throw new IllegalStateException("cannot unread -2");
             pushed = c;
         }
     }
 
-    /**
-     * CSV出力（安全側）:
-     * - , " CR LF を含む場合は "..." で囲う
-     * - " は "" にエスケープ
-     * - 先頭/末尾空白やタブも囲う（事故防止）
-     */
-    static final class CsvWriter {
+    // -------------------------
+    // Internals: CSV Writer (safe)
+    // -------------------------
+
+    public static final class CsvWriter {
         private final Writer w;
 
-        CsvWriter(Writer w) {
-            this.w = w;
+        public CsvWriter(Writer w) {
+            this.w = Objects.requireNonNull(w, "writer");
         }
 
-        void writeRecord(List<String> cols) throws IOException {
+        public void writeRecord(List<String> cols) throws IOException {
             for (int i = 0; i < cols.size(); i++) {
                 if (i > 0) w.write(',');
                 w.write(escape(cols.get(i)));
@@ -233,17 +293,25 @@ public class CsvExtract {
             w.write("\n");
         }
 
-        void flush() throws IOException {
+        public void flush() throws IOException {
             w.flush();
         }
 
-        private String escape(String s) {
+        /**
+         * CSV安全エスケープ:
+         * - , " CR LF を含む -> "..." で囲う
+         * - " は "" に
+         * - 先頭/末尾の空白/タブも囲う（事故防止）
+         */
+        public static String escape(String s) {
             if (s == null) return "";
 
             boolean mustQuote = false;
+
             if (s.indexOf(',') >= 0 || s.indexOf('"') >= 0 || s.indexOf('\n') >= 0 || s.indexOf('\r') >= 0) {
                 mustQuote = true;
             }
+
             if (!mustQuote && !s.isEmpty()) {
                 char first = s.charAt(0);
                 char last = s.charAt(s.length() - 1);
