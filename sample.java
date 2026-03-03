@@ -150,3 +150,47 @@ try (InputStream in = new FileInputStream("input.csv");
             true);
 }
 
+
+
+
+
+------------------------------
+
+
+
+
+public static void extractStream(
+        Reader reader,
+        List<String> selectedColumns,
+        boolean strictMissingColumn,
+        ExtractConsumer consumer
+) throws IOException {
+
+    CsvToolkit.CsvParser parser = new CsvToolkit.CsvParser(reader);
+
+    List<String> header = parser.nextRecord();
+    if (header == null) return;
+
+    CsvToolkit.ColumnSelection sel =
+            CsvToolkit.ColumnSelection.build(header, selectedColumns, strictMissingColumn);
+
+    List<String> rec;
+    long rowNo = 1;
+
+    while ((rec = parser.nextRecord()) != null) {
+        rowNo++;
+
+        List<String> picked = sel.pick(rec);
+
+        Map<String, String> row = new LinkedHashMap<>();
+        for (int i = 0; i < sel.outputHeader.size(); i++) {
+            row.put(sel.outputHeader.get(i), picked.get(i));
+        }
+
+        consumer.accept(rowNo, row);
+    }
+}
+
+public interface ExtractConsumer {
+    void accept(long rowNo, Map<String, String> row);
+}
