@@ -53,3 +53,39 @@ InputStream mapIn =
 if (mapIn == null) {
     throw new IllegalStateException("mapping.properties がクラスパスに見つかりません");
 }
+
+
+
+
+String sfName = (e.getKey() == null) ? "" : e.getKey().trim();
+String spec   = (e.getValue() == null) ? "" : e.getValue().trim();
+
+if (sfName.isEmpty()) {
+    System.err.println("[INFO] Skip column (empty SF column name in mapping.properties)");
+    continue;
+}
+if (spec.isEmpty()) {
+    System.err.println("[INFO] Skip column (empty mapping spec) : " + sfName);
+    continue;
+}
+
+MappingSpec ms = MappingSpec.parse(spec);
+if (ms.dtoFieldName == null || ms.dtoFieldName.trim().isEmpty()) {
+    System.err.println("[INFO] Skip column (empty DTO field name) : " + sfName + " -> " + spec);
+    continue;
+}
+
+Field f = dtoFields.get(ms.dtoFieldName);
+if (f == null) {
+    System.err.println("[INFO] Skip column (DTO field not found): "
+            + sfName + " -> " + ms.dtoFieldName);
+    continue;
+}
+
+columns.add(new Column<>(sfName, f, ms.format));
+
+
+
+
+
+
