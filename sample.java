@@ -85,7 +85,34 @@ if (f == null) {
 columns.add(new Column<>(sfName, f, ms.format));
 
 
+#####################
 
+private static String escapeCsv(String s) {
+    if (s == null) return "";
 
+    boolean mustQuote = false;
+
+    // RFC4180: comma / quote / CR / LF があればクォート
+    if (s.indexOf(',') >= 0 || s.indexOf('"') >= 0 || s.indexOf('\n') >= 0 || s.indexOf('\r') >= 0) {
+        mustQuote = true;
+    }
+
+    // 先頭末尾の空白・タブもクォート（Excel/SF系の誤解釈回避）
+    if (!mustQuote && !s.isEmpty()) {
+        char first = s.charAt(0);
+        char last = s.charAt(s.length() - 1);
+        if (first == ' ' || first == '\t' || last == ' ' || last == '\t') {
+            mustQuote = true;
+        }
+    }
+
+    // quoteは2個にエスケープ
+    if (s.indexOf('"') >= 0) {
+        s = s.replace("\"", "\"\"");
+        mustQuote = true; // quoteを含んでたら必ず囲う
+    }
+
+    return mustQuote ? "\"" + s + "\"" : s;
+}
 
 
