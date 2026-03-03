@@ -134,3 +134,19 @@ if (actual != expected) {
 
 w.println(line);
 
+
+
+
+
+#########################
+
+try (InputStream in = new FileInputStream("input.csv");
+     Reader reader = CsvToolkit.newReader(in);
+     OutputStream out = new FileOutputStream("out.csv");
+     Writer writer = CsvToolkit.newWriter(out)) {
+
+    CsvToolkit.extractCsv(reader, writer,
+            Arrays.asList("Name", "PostalCode__c"),
+            true);
+}
+
