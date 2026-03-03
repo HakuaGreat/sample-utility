@@ -116,3 +116,21 @@ private static String escapeCsv(String s) {
 }
 
 
+
+
+############################
+
+
+
+String line = String.join(",", row);
+int expected = columns.size();
+int actual = 1 + (int) line.chars().filter(ch -> ch == ',').count(); // 雑だが検知には効く
+
+if (actual != expected) {
+    System.err.println("[ERROR] column mismatch expected=" + expected + " actual=" + actual);
+    System.err.println("[ERROR] line=" + line);
+    throw new IllegalStateException("CSV column mismatch");
+}
+
+w.println(line);
+
