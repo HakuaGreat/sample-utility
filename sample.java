@@ -1,3 +1,7 @@
+す
+
+
+
 try (SqlSession session = sqlSessionFactory.openSession();
      Cursor<MyDto> cursor = session.getMapper(MyMapper.class).selectForCsvCursor()) {
 
@@ -194,3 +198,16 @@ public static void extractStream(
 public interface ExtractConsumer {
     void accept(long rowNo, Map<String, String> row);
 }
+
+
+
+
+
+
+
+
+--------------------------------------------------------
+// ApplicationContext ctx = ...（既存）
+// File successCsv = ...（保存した成功CSV）
+
+SfIdApplyRunner.apply(ctx, successCsv);
