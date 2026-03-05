@@ -211,3 +211,25 @@ public interface ExtractConsumer {
 // File successCsv = ...（保存した成功CSV）
 
 SfIdApplyRunner.apply(ctx, successCsv);
+
+
+
+
+
+
+
+
+
+--------------------------------------------------------
+try (RotatingCsvWriter w = RotatingCsvWriter.open(
+        outDir,
+        "payload",
+        9_000_000L,              // maxBytesPerFile（例：9MB）
+        UTF_8,
+        true,                    // 各ファイルにヘッダー付ける
+        header
+)) {
+    for (...) {
+        w.writeRecord(row);
+    }
+}
