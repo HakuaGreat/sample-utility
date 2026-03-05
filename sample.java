@@ -221,15 +221,40 @@ SfIdApplyRunner.apply(ctx, successCsv);
 
 
 --------------------------------------------------------
+// 追加で必要：出力ディレクトリとファイル名ベース
+File outDir = new File("/path/to/out");      // 例: 結果出力先ディレクトリ
+String baseName = "payload";                 // 例: payload_001.csv, payload_002.csv...
+long maxBytesPerFile = 9_000_000L;           // 例: 9MB（制限に合わせて調整）
+
+List<String> header = columns.stream()
+        .map(c -> c.sfName)
+        .collect(Collectors.toList());
+
 try (RotatingCsvWriter w = RotatingCsvWriter.open(
         outDir,
-        "payload",
-        9_000_000L,              // maxBytesPerFile（例：9MB）
-        UTF_8,
-        true,                    // 各ファイルにヘッダー付ける
+        baseName,
+        maxBytesPerFile,
+        StandardCharsets.UTF_8,
+        true,        // 各ファイルにヘッダーを書きたいなら true
         header
 )) {
-    for (...) {
+    for (T dto : cursor) {
+        List<String> row = new ArrayList<>(columns.size());
+        for (Column<T> col : columns) {
+            Object raw;
+            try {
+                raw = col.field.get(dto);
+            } catch (IllegalAccessException ex) {
+                throw new RuntimeException(ex);
+            }
+
+            String formatted = formatForSalesforce(raw, col.format);
+
+            // ★重要：ここで escapeCsv しない（二重エスケープ防止）
+            row.add(formatted);
+        }
+
+        // ★RotatingCsvWriter が「エスケープ＆カンマ区切り＆改行」まで面倒みる
         w.writeRecord(row);
     }
 }
