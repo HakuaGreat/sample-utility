@@ -310,3 +310,19 @@ public class SalesforceCsvSyncService {
         }
     }
 }
+
+
+
+----------------------------
+
+
+
+List<RetailStoreDto> list = new ArrayList<>();
+
+while ((line = br.readLine()) != null) {
+    Map<String, String> row = ...
+    RetailStoreDto dto = mapper.map(row);
+    list.add(dto);
+}
+
+repository.insert(list);
