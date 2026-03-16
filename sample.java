@@ -311,4 +311,59 @@ Field field = fieldCache.get(dtoFieldName);
 
 
 
+----------------------------ここから
+
+
+for (int i = 0; i < headers.size(); i++) {
+    String value = i < values.size() ? values.get(i) : "";
+    map.put(normalize(headers.get(i)), value);
+}
+
+
 ----------------------------
+
+
+private String normalize(String s) {
+    if (s == null) {
+        return null;
+    }
+    return s.trim().toLowerCase();
+}
+
+
+----------------------------
+
+public String get(String headerName) {
+    if (headerName == null) {
+        return null;
+    }
+    return values.get(headerName.trim().toLowerCase());
+}
+
+----------------------------
+
+
+private final Map<String, String> mapping = new HashMap<>();
+
+public RetailStoreCsvDtoAssembler(Properties props) {
+    for (String key : props.stringPropertyNames()) {
+        mapping.put(normalize(key), props.getProperty(key));
+    } 
+
+----------------------------
+
+
+private String normalize(String s) {
+    if (s == null) {
+        return null;
+    }
+    return s.trim().toLowerCase();
+}
+
+
+----------------------------
+
+for (Map.Entry<String, String> entry : mapping.entrySet()) {
+    String sfFieldName = entry.getKey();
+    String dtoFieldName = entry.getValue();
+    String rawValue = record.get(sfFieldName);
