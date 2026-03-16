@@ -295,3 +295,20 @@ try (InputStream csvStream = new FileInputStream(csvFile)) {
 
 
 ----------------------------
+
+
+
+
+String rawValue = record.get(sfFieldName);
+
+System.out.println("[DEBUG] sfFieldName=" + sfFieldName
+        + ", dtoFieldName=" + dtoFieldName
+        + ", rawValue=" + rawValue);
+
+Field field = fieldCache.get(dtoFieldName);
+
+
+
+
+
+----------------------------
