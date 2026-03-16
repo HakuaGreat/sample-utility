@@ -258,3 +258,19 @@ try (RotatingCsvWriter w = RotatingCsvWriter.open(
         w.writeRecord(row);
     }
 }
+
+
+
+
+----------------------------
+
+
+
+InputStream csvStream = bulkApiClient.getQueryResult(jobId);
+
+RetailStoreRepository repository = ...; // MyBatis mapper取得
+
+RetailStoreSyncExecutor executor =
+        new RetailStoreSyncExecutor(repository);
+
+executor.execute(csvStream);
