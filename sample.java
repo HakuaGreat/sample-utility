@@ -274,3 +274,24 @@ RetailStoreSyncExecutor executor =
         new RetailStoreSyncExecutor(repository);
 
 executor.execute(csvStream);
+
+
+
+
+----------------------------
+
+
+
+File csvFile = new File("C:/work/result.csv");
+
+try (InputStream csvStream = new FileInputStream(csvFile)) {
+    RetailStoreSyncExecutor executor =
+            new RetailStoreSyncExecutor(repository);
+
+    executor.execute(csvStream);
+}
+
+
+
+
+----------------------------
