@@ -162,3 +162,101 @@ public abstract class AbstractCsvDtoAssembler<T> implements DtoAssembler<T> {
         return trimmed;
     }
 }
+
+----------------------------
+
+import java.util.List;
+
+public interface BulkInsertHandler<T> {
+    void insert(List<T> list);
+}
+
+----------------------------
+
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.List;
+
+public class GenericCsvBridgeService<T> {
+
+    private final DtoAssembler<T> assembler;
+    private final BulkInsertHandler<T> insertHandler;
+    private final int chunkSize;
+
+    public GenericCsvBridgeService(
+            DtoAssembler<T> assembler,
+            BulkInsertHandler<T> insertHandler,
+            int chunkSize) {
+        this.assembler = assembler;
+        this.insertHandler = insertHandler;
+        this.chunkSize = chunkSize;
+    }
+
+    public void execute(InputStream csvStream) throws Exception {
+        try (CsvResultReader reader = new CsvResultReader(
+                new InputStreamReader(csvStream, StandardCharsets.UTF_8))) {
+
+            reader.open();
+
+            List<T> buffer = new ArrayList<>(chunkSize);
+
+            CsvRecord record;
+            while ((record = reader.readRecord()) != null) {
+                T dto = assembler.assemble(record);
+                buffer.add(dto);
+
+                if (buffer.size() >= chunkSize) {
+                    insertHandler.insert(buffer);
+                    buffer = new ArrayList<>(chunkSize);
+                }
+            }
+
+            if (!buffer.isEmpty()) {
+                insertHandler.insert(buffer);
+            }
+        }
+    }
+}
+
+----------------------------
+
+import java.util.List;
+
+public class RetailStoreInsertHandler implements BulkInsertHandler<RetailStoreDto> {
+
+    private final RetailStoreRepository repository;
+
+    public RetailStoreInsertHandler(RetailStoreRepository repository) {
+        this.repository = repository;
+    }
+
+    @Override
+    public void insert(List<RetailStoreDto> list) {
+        repository.insert(list);
+    }
+}
+
+----------------------------
+
+Properties mapping = new Properties();
+try (InputStream in = getClass().getResourceAsStream("/sf-mapping.properties")) {
+    if (in == null) {
+        throw new IllegalStateException("sf-mapping.properties が見つかりません");
+    }
+    mapping.load(in);
+}
+
+RetailStoreCsvDtoAssembler assembler =
+        new RetailStoreCsvDtoAssembler(mapping, batchId);
+
+RetailStoreInsertHandler insertHandler =
+        new RetailStoreInsertHandler(repository);
+
+GenericCsvBridgeService<RetailStoreDto> bridgeService =
+        new GenericCsvBridgeService<>(assembler, insertHandler, 1000);
+
+bridgeService.execute(csvStream);
+
+----------------------------
