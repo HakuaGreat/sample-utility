@@ -61,3 +61,34 @@ public class RetailStoreSyncExecutor
         return new RetailStoreCsvDtoAssembler(mapping, batchId);
     }
 }
+
+----------------------------
+
+public void execute(InputStream csvStream) throws Exception {
+
+    try (CsvResultReader reader =
+            new CsvResultReader(new InputStreamReader(csvStream, StandardCharsets.UTF_8))) {
+
+        reader.open();
+
+        List<RetailStoreDto> buffer = new ArrayList<>(1000);
+
+        CsvRecord record;
+
+        while ((record = reader.readRecord()) != null) {
+
+            RetailStoreDto dto = assembler.assemble(record);
+
+            buffer.add(dto);
+
+            if (buffer.size() >= 1000) {
+                repository.insert(buffer);
+                buffer.clear();
+            }
+        }
+
+        if (!buffer.isEmpty()) {
+            repository.insert(buffer);
+        }
+    }
+}
