@@ -367,3 +367,21 @@ for (Map.Entry<String, String> entry : mapping.entrySet()) {
     String sfFieldName = entry.getKey();
     String dtoFieldName = entry.getValue();
     String rawValue = record.get(sfFieldName);
+
+----------------------------
+
+try (java.io.Reader reader = java.nio.file.Files.newBufferedReader(
+        java.nio.file.Paths.get("./success.csv"),
+        java.nio.charset.StandardCharsets.UTF_8)) {
+
+    GenericCsvReader csvReader = new GenericCsvReader();
+
+    csvReader.readAndProcess(
+            reader,
+            new SuccessRowFilter(),
+            new SalesforceResultRowMapper(),
+            new SalesforceResultProcessor(retailStoreRepository)
+    );
+}
+
+----------------------------
