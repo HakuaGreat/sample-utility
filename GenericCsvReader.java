@@ -9,15 +9,37 @@ import java.util.Map;
 public class GenericCsvReader {
 
     public <T> List<T> read(Reader reader, CsvRowFilter filter, CsvRowMapper<T> mapper) throws IOException {
+        return read(reader, filter, mapper, null);
+    }
+
+    public <T> List<T> read(Reader reader,
+                            CsvRowFilter filter,
+                            CsvRowMapper<T> mapper,
+                            CsvHeaderValidator headerValidator) throws IOException {
         List<T> result = new ArrayList<>();
+
+        if (reader == null) {
+            return result;
+        }
 
         try (BufferedReader br = new BufferedReader(reader)) {
             String headerLine = br.readLine();
-            if (headerLine == null || headerLine.trim().isEmpty()) {
+
+            // ファイル自体が空
+            if (headerLine == null) {
+                return result;
+            }
+
+            // ヘッダ行が空文字
+            if (headerLine.trim().isEmpty()) {
                 return result;
             }
 
             List<String> headers = parseCsvLine(headerLine);
+
+            if (headerValidator != null) {
+                headerValidator.validate(headers);
+            }
 
             String line;
             while ((line = br.readLine()) != null) {
@@ -40,10 +62,27 @@ public class GenericCsvReader {
         return result;
     }
 
-    public <T> void readAndProcess(Reader reader, CsvRowFilter filter, CsvRowMapper<T> mapper, DtoListProcessor<T> processor)
-            throws Exception {
-        List<T> dtoList = read(reader, filter, mapper);
+    public <T> int readAndProcess(Reader reader,
+                                  CsvRowFilter filter,
+                                  CsvRowMapper<T> mapper,
+                                  DtoListProcessor<T> processor) throws Exception {
+        return readAndProcess(reader, filter, mapper, null, processor);
+    }
+
+    public <T> int readAndProcess(Reader reader,
+                                  CsvRowFilter filter,
+                                  CsvRowMapper<T> mapper,
+                                  CsvHeaderValidator headerValidator,
+                                  DtoListProcessor<T> processor) throws Exception {
+
+        List<T> dtoList = read(reader, filter, mapper, headerValidator);
+
+        if (dtoList == null || dtoList.isEmpty()) {
+            return 0;
+        }
+
         processor.process(dtoList);
+        return dtoList.size();
     }
 
     private Map<String, String> toRowMap(List<String> headers, List<String> values) {
