@@ -40,33 +40,10 @@ public class GenericCsvReader {
         return result;
     }
 
-    public <T> void readAndProcess(Reader reader, CsvRowFilter filter, CsvRowMapper<T> mapper, DtoProcessor<T> processor)
+    public <T> void readAndProcess(Reader reader, CsvRowFilter filter, CsvRowMapper<T> mapper, DtoListProcessor<T> processor)
             throws Exception {
-        try (BufferedReader br = new BufferedReader(reader)) {
-            String headerLine = br.readLine();
-            if (headerLine == null || headerLine.trim().isEmpty()) {
-                return;
-            }
-
-            List<String> headers = parseCsvLine(headerLine);
-
-            String line;
-            while ((line = br.readLine()) != null) {
-                if (line.trim().isEmpty()) {
-                    continue;
-                }
-
-                List<String> values = parseCsvLine(line);
-                Map<String, String> rowMap = toRowMap(headers, values);
-
-                if (filter == null || filter.test(rowMap)) {
-                    T dto = mapper.map(rowMap);
-                    if (dto != null) {
-                        processor.process(dto);
-                    }
-                }
-            }
-        }
+        List<T> dtoList = read(reader, filter, mapper);
+        processor.process(dtoList);
     }
 
     private Map<String, String> toRowMap(List<String> headers, List<String> values) {
