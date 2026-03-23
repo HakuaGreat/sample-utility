@@ -21,7 +21,8 @@ public class CsvResultReader implements AutoCloseable {
         if (headerLine == null) {
             throw new IllegalStateException("CSVヘッダがありません");
         }
-        this.headers = parser.parse(headerLine);
+
+        headers = parser.parse(headerLine);
     }
 
     public CsvRecord readRecord() throws IOException {
@@ -31,18 +32,23 @@ public class CsvResultReader implements AutoCloseable {
         }
 
         List<String> values = parser.parse(line);
-        Map<String, String> map = new LinkedHashMap<>();
+        Map<String, String> row = new LinkedHashMap<>();
 
         for (int i = 0; i < headers.size(); i++) {
+            String header = normalize(headers.get(i));
             String value = i < values.size() ? values.get(i) : "";
-            map.put(headers.get(i), value);
+            row.put(header, value);
         }
 
-        return new CsvRecord(map);
+        return new CsvRecord(row);
     }
 
     @Override
     public void close() throws IOException {
         reader.close();
+    }
+
+    private String normalize(String value) {
+        return value.replace("\uFEFF", "").trim().toLowerCase();
     }
 }
