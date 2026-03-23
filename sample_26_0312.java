@@ -9,19 +9,25 @@ public class CsvRecord {
     }
 
     public String get(String headerName) {
-        return values.get(headerName);
-    }
-
-    public String getOrDefault(String headerName, String defaultValue) {
-        return values.getOrDefault(headerName, defaultValue);
+        if (headerName == null) {
+            return null;
+        }
+        return values.get(normalize(headerName));
     }
 
     public boolean contains(String headerName) {
-        return values.containsKey(headerName);
+        if (headerName == null) {
+            return false;
+        }
+        return values.containsKey(normalize(headerName));
     }
 
     @Override
     public String toString() {
         return values.toString();
+    }
+
+    private String normalize(String value) {
+        return value.replace("\uFEFF", "").trim().toLowerCase();
     }
 }
