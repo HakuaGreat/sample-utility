@@ -151,25 +151,27 @@ public abstract class AbstractCsvDtoAssembler<T> {
         return trimmed.isEmpty() ? null : trimmed;
     }
 
-    protected String normalizeScientificNotation(String value) {
-        if (value == null) {
-            return null;
-        }
+protected String normalizeScientificNotation(String value) {
+    if (value == null) {
+        return null;
+    }
 
-        String trimmed = value.trim();
-
-        try {
-            if (trimmed.contains("E") || trimmed.contains("e")) {
-                return new BigDecimal(trimmed).toPlainString();
-            }
-        } catch (NumberFormatException e) {
-            // 数値でないならそのまま返す
-        }
-
+    String trimmed = value.trim();
+    if (trimmed.isEmpty()) {
         return trimmed;
     }
 
-    protected String normalize(String value) {
-        return value.replace("\uFEFF", "").trim().toLowerCase();
+    try {
+        if (trimmed.contains("E") || trimmed.contains("e")) {
+            return new BigDecimal(trimmed).toPlainString();
+        }
+
+        if (trimmed.matches("^-?\\d+\\.0+$")) {
+            return trimmed.replaceFirst("\\.0+$", "");
+        }
+
+        return trimmed;
+    } catch (NumberFormatException e) {
+        return trimmed;
     }
 }
