@@ -207,3 +207,52 @@ public class CsvParser {
         return records;
     }
 }
+
+----------------------------
+
+public static List<String> parseCsvRecord(BufferedReader br)
+        throws IOException {
+
+    String line;
+
+    StringBuilder record = new StringBuilder();
+
+    boolean inQuotes = false;
+
+    while ((line = br.readLine()) != null) {
+
+        // 既存行があるなら改行復元
+        if (record.length() > 0) {
+            record.append("\n");
+        }
+
+        record.append(line);
+
+        // クォート状態確認
+        for (int i = 0; i < line.length(); i++) {
+
+            char c = line.charAt(i);
+
+            if (c == '"') {
+
+                // ""
+                if (i + 1 < line.length()
+                        && line.charAt(i + 1) == '"') {
+
+                    i++;
+
+                } else {
+
+                    inQuotes = !inQuotes;
+                }
+            }
+        }
+
+        // クォート閉じたなら1レコード完成
+        if (!inQuotes) {
+            break;
+        }
+    }
+
+    return parseCsv(record.toString());
+}
