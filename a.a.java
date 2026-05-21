@@ -95,3 +95,115 @@ public static List<String> parseCsv(String record) {
 
     return result;
 }
+
+
+----------------------------
+
+import java.io.BufferedReader;
+import java.io.IOException;
+import java.util.ArrayList;
+import java.util.List;
+
+public class CsvParser {
+
+    public static List<List<String>> parse(BufferedReader br)
+            throws IOException {
+
+        List<List<String>> records = new ArrayList<>();
+
+        List<String> row = new ArrayList<>();
+
+        StringBuilder field = new StringBuilder();
+
+        boolean inQuotes = false;
+
+        int ch;
+
+        while ((ch = br.read()) != -1) {
+
+            char c = (char) ch;
+
+            // ダブルクォート
+            if (c == '"') {
+
+                // クォート内の ""
+                if (inQuotes) {
+
+                    br.mark(1);
+
+                    int next = br.read();
+
+                    if (next == '"') {
+
+                        field.append('"');
+
+                    } else {
+
+                        inQuotes = false;
+
+                        br.reset();
+                    }
+
+                } else {
+
+                    inQuotes = true;
+                }
+
+                continue;
+            }
+
+            // カンマ区切り
+            if (c == ',' && !inQuotes) {
+
+                row.add(field.toString());
+
+                field.setLength(0);
+
+                continue;
+            }
+
+            // 改行
+            if ((c == '\n' || c == '\r') && !inQuotes) {
+
+                // CRLF対応
+                if (c == '\r') {
+
+                    br.mark(1);
+
+                    int next = br.read();
+
+                    if (next != '\n') {
+                        br.reset();
+                    }
+                }
+
+                row.add(field.toString());
+
+                field.setLength(0);
+
+                // 空行対策
+                if (!row.isEmpty()) {
+
+                    records.add(new ArrayList<>(row));
+
+                    row.clear();
+                }
+
+                continue;
+            }
+
+            // クォート内改行は普通に文字として入る
+            field.append(c);
+        }
+
+        // EOF残処理
+        if (field.length() > 0 || !row.isEmpty()) {
+
+            row.add(field.toString());
+
+            records.add(row);
+        }
+
+        return records;
+    }
+}
