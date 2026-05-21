@@ -1,4 +1,5 @@
-public static List<String> readCsvRecord(BufferedReader br)
+う
+----------------------------public static List<String> readCsvRecord(BufferedReader br)
         throws IOException {
 
     String line;
@@ -255,4 +256,58 @@ public static List<String> parseCsvRecord(BufferedReader br)
     }
 
     return parseCsv(record.toString());
+}
+
+----------------------------
+
+public static String readCsvRecord(BufferedReader br)
+        throws IOException {
+
+    String line;
+
+    StringBuilder sb = new StringBuilder();
+
+    boolean inQuotes = false;
+
+    while ((line = br.readLine()) != null) {
+
+        // 既存データあるなら改行戻す
+        if (sb.length() > 0) {
+            sb.append("\n");
+        }
+
+        sb.append(line);
+
+        // クォート状態更新
+        for (int i = 0; i < line.length(); i++) {
+
+            char c = line.charAt(i);
+
+            if (c == '"') {
+
+                // ""
+                if (i + 1 < line.length()
+                        && line.charAt(i + 1) == '"') {
+
+                    i++;
+
+                } else {
+
+                    inQuotes = !inQuotes;
+                }
+            }
+        }
+
+        // クォート閉じた = 1レコード完成
+        if (!inQuotes) {
+            return sb.toString();
+        }
+    }
+
+    // EOF時
+    if (sb.length() > 0) {
+        return sb.toString();
+    }
+
+    return null;
 }
